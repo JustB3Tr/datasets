@@ -80,7 +80,7 @@ def run_eval(jsonl_path: str, sample_size: int = 100) -> EvalReport:
         "cybersecurity": ["cybersecurity", "penetration", "threat", "exploit", "vulnerability", "firewall", "malware"],
         "networking": ["network", "protocol", "TCP", "routing", "packet", "subnet", "DNS", "OSI"],
         "it": ["Active Directory", "sysadmin", "infrastructure", "cloud", "virtualization", "DevOps"],
-        "reasoning": ["step-by-step", "solve", "reasoning", "math", "logical", "calculate"],
+        "reasoning": ["step-by-step", "solve", "reasoning", "logical", "algorithm", "time complexity", "O(n"],
         "threejs": ["Three.js", "threejs", "WebGL", "3D", "shader", "geometry", "renderer"],
         "animations": ["animation", "keyframe", "easing", "motion", "transition", "60fps"],
         "css": ["CSS", "flexbox", "grid", "stylesheet", "responsive", "cascade"],
