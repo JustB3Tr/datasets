@@ -108,7 +108,7 @@ class TrainingConfig:
     dataset_format: str = "jsonl"   # jsonl | hf_hub | csv
     dataset_split: str = "train"
     val_split_ratio: float = 0.05
-    image_column: str = "image"
+    has_images: bool = True
     messages_column: str = "messages"
     max_seq_len: int = 2048
 
@@ -160,7 +160,20 @@ def build_config_interactively() -> TrainingConfig:
         default=cfg.model_name,
     )
 
-    info("Your GPU has ~8 GB VRAM. Qwen2.5-VL-3B in bf16 fits without quantization.")
+    try:
+        import torch
+        if torch.cuda.is_available():
+            props = torch.cuda.get_device_properties(0)
+            vram_gb = props.total_memory / 1024**3
+            info(f"Detected GPU: {props.name} ({vram_gb:.1f} GB VRAM)")
+            if vram_gb >= 6:
+                info("Qwen2.5-VL-3B in bf16 should fit without quantization.")
+            else:
+                info("VRAM may be tight — consider enabling QLoRA below.")
+        else:
+            warn("No CUDA GPU detected. Training will use CPU (very slow).")
+    except Exception:
+        pass
     cfg.use_qlora = ask_bool(
         "Use QLoRA (4-bit quantization)? Saves VRAM but slightly slower",
         default=False,
@@ -193,11 +206,10 @@ def build_config_interactively() -> TrainingConfig:
     cfg.messages_column = ask(
         "Column name containing messages/conversations", default="messages"
     )
-    multimodal = ask_bool("Does your dataset contain images?", default=True)
-    if multimodal:
-        cfg.image_column = ask("Column name containing images", default="image")
-    else:
-        cfg.image_column = ""
+    cfg.has_images = ask_bool(
+        "Does your dataset contain images? (images embedded inside messages as {type:image})",
+        default=True,
+    )
 
     cfg.val_split_ratio = ask_float(
         "Validation split ratio (0 to disable)", default=0.05
@@ -289,7 +301,7 @@ def print_summary(cfg: TrainingConfig):
             ("Dataset", cfg.dataset_path),
             ("Format", cfg.dataset_format),
             ("Messages col", cfg.messages_column),
-            ("Image col", cfg.image_column or "N/A"),
+            ("Images in messages", str(cfg.has_images)),
             ("Max seq len", str(cfg.max_seq_len)),
             ("LoRA r / alpha", f"{cfg.lora_r} / {cfg.lora_alpha}"),
             ("LoRA targets", ", ".join(cfg.lora_target_modules)),
@@ -315,8 +327,7 @@ def print_summary(cfg: TrainingConfig):
 # ── dataset loading ──────────────────────────────────────────────────────────
 
 def load_dataset_from_config(cfg: TrainingConfig):
-    from datasets import load_dataset, Dataset
-    import pandas as pd
+    from datasets import load_dataset
 
     info(f"Loading dataset from: {cfg.dataset_path}")
 
@@ -357,7 +368,7 @@ def make_collator(processor, cfg: TrainingConfig):
     import torch
     from qwen_vl_utils import process_vision_info
 
-    has_images = bool(cfg.image_column)
+    has_images = cfg.has_images
 
     def collate(batch):
         texts = []
@@ -366,9 +377,15 @@ def make_collator(processor, cfg: TrainingConfig):
 
         for sample in batch:
             messages = sample[cfg.messages_column]
-            # If messages is a string, try to parse it
             if isinstance(messages, str):
-                messages = json.loads(messages)
+                try:
+                    messages = json.loads(messages)
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"Could not parse messages column '{cfg.messages_column}' as JSON. "
+                        f"Check your dataset format (CSV quoting issues are common). "
+                        f"Original error: {e}"
+                    ) from e
 
             text = processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=False
