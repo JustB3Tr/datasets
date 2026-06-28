@@ -518,7 +518,7 @@ function connectSSE(jobId, total) {
     showResults(d.eval, d.file, d.generated, false);
   });
 
-  es.addEventListener('error', e => {
+  es.addEventListener('job_error', e => {
     try {
       const d = JSON.parse(e.data);
       log(`Error: ${d.msg}`, 'error');
@@ -528,6 +528,7 @@ function connectSSE(jobId, total) {
     document.getElementById('generate-btn').disabled = false;
   });
 
+  // onerror handles transport-level failures only (reconnect is automatic)
   es.onerror = () => {
     if (es.readyState === EventSource.CLOSED) return;
     log('Connection lost. Retrying...', 'warn');

@@ -75,10 +75,26 @@ def run_eval(jsonl_path: str, sample_size: int = 100) -> EvalReport:
     domains_found: set[str] = set()
     user_questions: list[str] = []
 
+    # Keywords to infer domain from system/user content (since _domain is stripped from output)
+    _DOMAIN_SIGNALS = {
+        "cybersecurity": ["cybersecurity", "penetration", "threat", "exploit", "vulnerability", "firewall", "malware"],
+        "networking": ["network", "protocol", "TCP", "routing", "packet", "subnet", "DNS", "OSI"],
+        "it": ["Active Directory", "sysadmin", "infrastructure", "cloud", "virtualization", "DevOps"],
+        "reasoning": ["step-by-step", "solve", "reasoning", "math", "logical", "calculate"],
+        "threejs": ["Three.js", "threejs", "WebGL", "3D", "shader", "geometry", "renderer"],
+        "animations": ["animation", "keyframe", "easing", "motion", "transition", "60fps"],
+        "css": ["CSS", "flexbox", "grid", "stylesheet", "responsive", "cascade"],
+        "frontend": ["React", "Vue", "component", "frontend", "UI", "useState", "useEffect"],
+        "backend": ["FastAPI", "REST", "API", "database", "backend", "endpoint", "server"],
+    }
+
     for i, obj in enumerate(examples):
-        # Collect domain metadata (stripped before output)
-        if "_domain" in obj:
-            domains_found.add(obj["_domain"])
+        # Infer domain from message content (output has no _domain field)
+        all_text = " ".join(m.get("content", "") for m in obj.get("messages", []))
+        for domain, signals in _DOMAIN_SIGNALS.items():
+            if any(sig.lower() in all_text.lower() for sig in signals):
+                domains_found.add(domain)
+                break
 
         # Check 2: Schema valid
         msgs = obj.get("messages")

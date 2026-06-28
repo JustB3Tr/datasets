@@ -100,7 +100,7 @@ async def run_generation(job: Job):
         await job.log(f"Scraped {len(raw_items)} raw items from sources")
 
         if not raw_items:
-            await job.emit("error", {"msg": "No raw items could be scraped from any source"})
+            await job.emit("job_error", {"msg": "No raw items could be scraped from any source"})
             job.status = JobStatus.FAILED
             await job.queue.put(None)
             return
@@ -137,10 +137,12 @@ async def run_generation(job: Job):
                     seen_questions.add(user_q)
                     batch_results.append(example)
 
-                # Write batch
+                # Write batch — strip _domain metadata before writing output
                 for example in batch_results:
-                    await f.write(json.dumps(example) + "\n")
+                    output = {k: v for k, v in example.items() if k != "_domain"}
+                    await f.write(json.dumps(output) + "\n")
                     generated += 1
+                    job.done = generated
 
                 pct = round(generated / job.count * 100, 1)
                 domain = batch_raw[-1].domain if batch_raw else "unknown"
@@ -189,7 +191,7 @@ async def run_generation(job: Job):
 
     except Exception as e:
         logger.exception("Generation job %s failed", job.job_id)
-        await job.emit("error", {"msg": str(e)})
+        await job.emit("job_error", {"msg": str(e)})
         job.status = JobStatus.FAILED
     finally:
         await job.queue.put(None)  # sentinel
