@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen Dataset Generator</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --warn: #d29922;
+    --error: #f85149;
+    --radius: 8px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .app {
+    max-width: 900px;
+    margin: 0 auto;
+    display: grid;
+    gap: 20px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  header h1 { font-size: 20px; font-weight: 600; }
+  header .badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .card h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text);
+  }
+
+  .form-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  label { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+
+  input[type="number"] {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 8px 12px;
+    font-size: 14px;
+    width: 120px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type="number"]:focus { border-color: var(--accent); }
+
+  .domains-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .domain-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    user-select: none;
+  }
+  .domain-check:hover { border-color: var(--accent); }
+  .domain-check input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; }
+  .domain-check .domain-label { font-size: 13px; }
+
+  .btn {
+    background: var(--accent);
+    color: #0d1117;
+    border: none;
+    border-radius: var(--radius);
+    padding: 9px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  .btn:hover { opacity: 0.9; }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-danger { background: var(--error); color: #fff; }
+  .btn-success { background: var(--accent2); color: #0d1117; }
+
+  /* Progress */
+  #progress-section { display: none; }
+
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .counter { font-size: 18px; font-weight: 600; color: var(--accent); }
+  .status-badge {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .status-badge.scraping { border-color: var(--warn); color: var(--warn); }
+  .status-badge.generating { border-color: var(--accent); color: var(--accent); }
+  .status-badge.evaluating { border-color: #a371f7; color: #a371f7; }
+  .status-badge.complete { border-color: var(--accent2); color: var(--accent2); }
+  .status-badge.failed { border-color: var(--error); color: var(--error); }
+
+  .progress-bar-bg {
+    background: var(--surface2);
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  .progress-bar-fill {
+    background: linear-gradient(90deg, var(--accent), #79c0ff);
+    height: 100%;
+    width: 0%;
+    border-radius: 4px;
+    transition: width 0.4s ease;
+  }
+
+  .domain-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .domain-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    transition: all 0.3s ease;
+  }
+  .domain-badge.active {
+    background: #1f6feb22;
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .domain-badge.done {
+    background: #1a7f3722;
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+
+  .log-console {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 12px;
+    height: 220px;
+    overflow-y: auto;
+    color: #8b949e;
+  }
+  .log-console .log-info { color: #8b949e; }
+  .log-console .log-warn { color: var(--warn); }
+  .log-console .log-error { color: var(--error); }
+  .log-console .log-success { color: var(--accent2); }
+
+  /* Results */
+  #results-section { display: none; }
+
+  .eval-card {
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .eval-card.pass {
+    background: #1a7f3722;
+    border: 1px solid var(--accent2);
+  }
+  .eval-card.fail {
+    background: #f8514922;
+    border: 1px solid var(--error);
+  }
+  .eval-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .eval-card.pass .eval-title { color: var(--accent2); }
+  .eval-card.fail .eval-title { color: var(--error); }
+
+  .eval-checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .check-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 5px 8px;
+    background: var(--surface2);
+    border-radius: 5px;
+  }
+  .check-icon { font-size: 14px; }
+  .check-fail { color: var(--error); }
+  .check-pass { color: var(--accent2); }
+
+  .domain-coverage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .domain-pill {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: #1f6feb22;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+
+  .download-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .file-info {
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .file-info strong { color: var(--text); }
+
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .form-row { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1>Qwen Dataset Generator</h1>
+    <span class="badge">qwen2.5vl:3b</span>
+  </header>
+
+  <!-- Config -->
+  <div class="card" id="config-card">
+    <h2>Generation Settings</h2>
+    <div class="form-row">
+      <label for="count-input">Number of examples</label>
+      <input type="number" id="count-input" value="500" min="1" max="10000" />
+      <button class="btn" id="generate-btn" onclick="startGeneration()">Generate Dataset</button>
+    </div>
+
+    <div style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <label>Domains to include</label>
+        <span style="color:var(--accent);font-size:12px;cursor:pointer" onclick="toggleAll()">Toggle all</span>
+      </div>
+      <div class="domains-grid" id="domains-grid">
+        <!-- populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="card" id="progress-section">
+    <h2>Generation Progress</h2>
+    <div class="progress-header">
+      <span class="counter" id="counter">0 / 0</span>
+      <span class="status-badge" id="status-badge">pending</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" id="progress-bar"></div>
+    </div>
+    <div class="domain-badges" id="domain-badges"></div>
+    <div class="log-console" id="log-console">
+      <span class="log-info">Waiting to start...</span>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div class="card" id="results-section">
+    <h2>Results</h2>
+    <div id="eval-container"></div>
+    <div class="download-row" style="margin-top:14px">
+      <div class="file-info" id="file-info"></div>
+      <button class="btn btn-success" id="download-btn" onclick="downloadFile()" style="display:none">
+        Download JSONL
+      </button>
+      <button class="btn" onclick="resetUI()" style="margin-left:auto">New Generation</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DOMAINS = [
+  { id: "cybersecurity", label: "Cybersecurity" },
+  { id: "networking",    label: "Networking" },
+  { id: "it",           label: "IT / Systems" },
+  { id: "reasoning",    label: "Reasoning" },
+  { id: "threejs",      label: "Three.js" },
+  { id: "animations",   label: "Animations" },
+  { id: "css",          label: "CSS" },
+  { id: "frontend",     label: "Frontend" },
+  { id: "backend",      label: "Backend" },
+];
+
+let currentJobId = null;
+let currentFile = null;
+let es = null;
+let seenDomains = new Set();
+
+// Build domain checkboxes
+function buildDomains() {
+  const grid = document.getElementById('domains-grid');
+  DOMAINS.forEach(d => {
+    const label = document.createElement('label');
+    label.className = 'domain-check';
+    label.innerHTML = `<input type="checkbox" id="domain-${d.id}" value="${d.id}" checked><span class="domain-label">${d.label}</span>`;
+    grid.appendChild(label);
+  });
+}
+
+function toggleAll() {
+  const boxes = document.querySelectorAll('#domains-grid input[type="checkbox"]');
+  const anyUnchecked = [...boxes].some(b => !b.checked);
+  boxes.forEach(b => b.checked = anyUnchecked);
+}
+
+function getSelectedDomains() {
+  const boxes = document.querySelectorAll('#domains-grid input[type="checkbox"]:checked');
+  return [...boxes].map(b => b.value);
+}
+
+function buildDomainBadges() {
+  const container = document.getElementById('domain-badges');
+  container.innerHTML = '';
+  getSelectedDomains().forEach(d => {
+    const badge = document.createElement('span');
+    badge.className = 'domain-badge';
+    badge.id = `badge-${d}`;
+    badge.textContent = DOMAINS.find(x => x.id === d)?.label || d;
+    container.appendChild(badge);
+  });
+}
+
+function activateBadge(domain) {
+  const badge = document.getElementById(`badge-${domain}`);
+  if (badge) badge.classList.add('active');
+}
+
+function doneBadge(domain) {
+  const badge = document.getElementById(`badge-${domain}`);
+  if (badge) { badge.classList.remove('active'); badge.classList.add('done'); }
+}
+
+function log(msg, level = 'info') {
+  const console = document.getElementById('log-console');
+  const span = document.createElement('span');
+  span.className = `log-${level}`;
+  const time = new Date().toLocaleTimeString();
+  span.textContent = `[${time}] ${msg}\n`;
+  console.appendChild(span);
+  console.scrollTop = console.scrollHeight;
+}
+
+function setStatus(status) {
+  const badge = document.getElementById('status-badge');
+  badge.textContent = status;
+  badge.className = `status-badge ${status}`;
+}
+
+function setProgress(done, total, pct) {
+  document.getElementById('counter').textContent = `${done.toLocaleString()} / ${total.toLocaleString()}`;
+  document.getElementById('progress-bar').style.width = pct + '%';
+}
+
+async function startGeneration() {
+  const count = parseInt(document.getElementById('count-input').value);
+  if (!count || count < 1 || count > 10000) {
+    alert('Please enter a count between 1 and 10000.');
+    return;
+  }
+  const domains = getSelectedDomains();
+  if (domains.length === 0) {
+    alert('Please select at least one domain.');
+    return;
+  }
+
+  document.getElementById('generate-btn').disabled = true;
+  document.getElementById('progress-section').style.display = 'block';
+  document.getElementById('results-section').style.display = 'none';
+  document.getElementById('log-console').innerHTML = '';
+  seenDomains = new Set();
+  buildDomainBadges();
+
+  log(`Requesting ${count} examples across ${domains.length} domains...`);
+  setStatus('pending');
+  setProgress(0, count, 0);
+
+  try {
+    const resp = await fetch('/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count, domains }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const { job_id } = await resp.json();
+    currentJobId = job_id;
+    log(`Job started: ${job_id}`);
+    connectSSE(job_id, count);
+  } catch (e) {
+    log(`Failed to start job: ${e.message}`, 'error');
+    document.getElementById('generate-btn').disabled = false;
+  }
+}
+
+function connectSSE(jobId, total) {
+  if (es) es.close();
+  es = new EventSource(`/progress/${jobId}`);
+
+  es.addEventListener('progress', e => {
+    const d = JSON.parse(e.data);
+    setProgress(d.done, d.total || total, d.pct || 0);
+    if (d.status) setStatus(d.status);
+    if (d.domain) {
+      if (!seenDomains.has(d.domain)) {
+        activateBadge(d.domain);
+      }
+      seenDomains.add(d.domain);
+    }
+  });
+
+  es.addEventListener('log', e => {
+    const d = JSON.parse(e.data);
+    log(d.msg, d.level || 'info');
+  });
+
+  es.addEventListener('complete', e => {
+    es.close();
+    const d = JSON.parse(e.data);
+    currentFile = d.file;
+    setStatus('complete');
+    setProgress(d.generated, total, 100);
+    log(`Complete! ${d.generated} examples generated.`, 'success');
+    // Mark all active badges as done
+    seenDomains.forEach(dom => doneBadge(dom));
+    showResults(d.eval, d.file, d.generated, true);
+  });
+
+  es.addEventListener('eval_failed', e => {
+    es.close();
+    const d = JSON.parse(e.data);
+    currentFile = d.file;
+    setStatus('complete');
+    log(`Generation done with eval issues. File still available for download.`, 'warn');
+    seenDomains.forEach(dom => doneBadge(dom));
+    showResults(d.eval, d.file, d.generated, false);
+  });
+
+  es.addEventListener('error', e => {
+    try {
+      const d = JSON.parse(e.data);
+      log(`Error: ${d.msg}`, 'error');
+    } catch {}
+    setStatus('failed');
+    es.close();
+    document.getElementById('generate-btn').disabled = false;
+  });
+
+  es.onerror = () => {
+    if (es.readyState === EventSource.CLOSED) return;
+    log('Connection lost. Retrying...', 'warn');
+  };
+}
+
+function showResults(evalReport, file, generated, passed) {
+  document.getElementById('results-section').style.display = 'block';
+
+  const ALL_CHECKS = [
+    { id: 'json_parseable',   label: 'JSON Parseable' },
+    { id: 'schema_valid',     label: 'Schema Valid' },
+    { id: 'role_sequence',    label: 'Role Sequence' },
+    { id: 'content_nonempty', label: 'Content Non-empty' },
+    { id: 'domain_coverage',  label: 'Domain Coverage' },
+    { id: 'uniqueness',       label: 'Uniqueness' },
+  ];
+
+  const failedSet = new Set(evalReport.failed_checks || []);
+  const checksHtml = ALL_CHECKS.map(c => {
+    const ok = !failedSet.has(c.id);
+    const cnt = evalReport.per_check_counts?.[c.id] || 0;
+    return `<div class="check-item">
+      <span class="check-icon">${ok ? '✅' : '❌'}</span>
+      <span class="${ok ? 'check-pass' : 'check-fail'}">${c.label}${!ok ? ` (${cnt})` : ''}</span>
+    </div>`;
+  }).join('');
+
+  const domainsHtml = (evalReport.domains_found || []).map(d =>
+    `<span class="domain-pill">${d}</span>`
+  ).join('');
+
+  const evalHtml = `
+    <div class="eval-card ${passed ? 'pass' : 'fail'}">
+      <div class="eval-title">${passed ? '✅ Eval Passed' : '⚠️ Eval Completed with Issues'}</div>
+      <div style="color:var(--text-muted);font-size:13px;margin-bottom:8px">
+        Checked ${evalReport.total || 0} examples across ${evalReport.checks_run?.length || 6} checks
+      </div>
+      <div class="eval-checks">${checksHtml}</div>
+      ${domainsHtml ? `<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">Domains found:</div><div class="domain-coverage">${domainsHtml}</div>` : ''}
+    </div>
+  `;
+  document.getElementById('eval-container').innerHTML = evalHtml;
+
+  document.getElementById('file-info').innerHTML = `
+    <strong>${generated?.toLocaleString() || 0}</strong> examples &nbsp;·&nbsp;
+    File: <strong>${file}</strong>
+  `;
+  document.getElementById('download-btn').style.display = 'inline-block';
+}
+
+function downloadFile() {
+  if (!currentJobId) return;
+  window.location.href = `/download/${currentJobId}`;
+}
+
+function resetUI() {
+  if (es) es.close();
+  currentJobId = null;
+  currentFile = null;
+  seenDomains = new Set();
+  document.getElementById('progress-section').style.display = 'none';
+  document.getElementById('results-section').style.display = 'none';
+  document.getElementById('generate-btn').disabled = false;
+  document.getElementById('log-console').innerHTML = '<span class="log-info">Waiting to start...</span>';
+  setProgress(0, 0, 0);
+  setStatus('pending');
+}
+
+buildDomains();
+</script>
+</body>
+</html>
