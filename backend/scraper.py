@@ -103,7 +103,7 @@ def _load_hf_stream(dataset_id: str, config: str | None, split: str, source: dic
     """Synchronous HF streaming call — run in thread pool."""
     try:
         from datasets import load_dataset  # type: ignore
-        ds = load_dataset(dataset_id, config, split=split, streaming=True, trust_remote_code=True)
+        ds = load_dataset(dataset_id, config, split=split, streaming=True, trust_remote_code=False)
         items = []
         for row in ds:
             if len(items) >= max_items:
@@ -130,7 +130,7 @@ async def stream_hf_dataset(
     max_items: int,
     progress_cb: Callable[[str], Awaitable[None]] | None = None,
 ) -> list[RawItem]:
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     if progress_cb:
         await progress_cb(f"Loading {source['dataset_id']} ({source['domain']})...")
     items = await loop.run_in_executor(
