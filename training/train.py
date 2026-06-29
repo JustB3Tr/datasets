@@ -534,7 +534,7 @@ def run_training(cfg: TrainingConfig):
         logging_steps=cfg.logging_steps,
         save_steps=cfg.save_steps,
         eval_steps=cfg.eval_steps if val_ds else None,
-        evaluation_strategy="steps" if val_ds else "no",
+        eval_strategy="steps" if val_ds else "no",
         save_total_limit=cfg.save_total_limit,
         report_to=cfg.report_to if cfg.report_to != "none" else [],
         run_name=cfg.run_name if cfg.report_to != "none" else None,
