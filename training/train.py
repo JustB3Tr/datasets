@@ -239,7 +239,10 @@ def build_config_interactively() -> TrainingConfig:
     # ── training ─────────────────────────────────────────────────────────────
     section("Training Hyperparameters")
 
-    cfg.output_dir = ask("Output directory", default="./output")
+    run_name = ask("Run name (used as output subfolder)", default="run1")
+    cfg.run_name = run_name
+    cfg.output_dir = f"./output/{run_name}"
+    info(f"Output will be saved to: {cfg.output_dir}")
     cfg.num_train_epochs = ask_int("Number of epochs", default=3)
     cfg.per_device_train_batch_size = ask_int(
         "Batch size per device (keep 1 for 8 GB VRAM)", default=1
@@ -277,8 +280,7 @@ def build_config_interactively() -> TrainingConfig:
         default="none",
         choices=["none", "wandb", "tensorboard"],
     )
-    if cfg.report_to != "none":
-        cfg.run_name = ask("Run name", default=cfg.run_name)
+    # run_name already set from the output subfolder name above
 
     resume = ask_bool("Resume from a checkpoint?", default=False)
     if resume:
@@ -296,6 +298,7 @@ def print_summary(cfg: TrainingConfig):
         t.add_column("Setting", style="cyan")
         t.add_column("Value")
         rows = [
+            ("Run name", cfg.run_name),
             ("Model", cfg.model_name),
             ("QLoRA", f"{'Yes (' + str(cfg.quant_bits) + '-bit)' if cfg.use_qlora else 'No (bf16 LoRA)'}"),
             ("Dataset", cfg.dataset_path),
