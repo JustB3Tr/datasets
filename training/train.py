@@ -516,6 +516,12 @@ def run_training(cfg: TrainingConfig):
     # ── training args ─────────────────────────────────────────────────────
     os.makedirs(cfg.output_dir, exist_ok=True)
 
+    total_steps = (len(train_ds) // (cfg.per_device_train_batch_size * cfg.gradient_accumulation_steps)) * cfg.num_train_epochs
+    warmup_steps = max(1, int(total_steps * cfg.warmup_ratio))
+
+    if cfg.gradient_checkpointing:
+        model.config.use_cache = False
+
     training_args = TrainingArguments(
         output_dir=cfg.output_dir,
         num_train_epochs=cfg.num_train_epochs,
@@ -524,7 +530,7 @@ def run_training(cfg: TrainingConfig):
         gradient_accumulation_steps=cfg.gradient_accumulation_steps,
         learning_rate=cfg.learning_rate,
         lr_scheduler_type=cfg.lr_scheduler_type,
-        warmup_ratio=cfg.warmup_ratio,
+        warmup_steps=warmup_steps,
         weight_decay=cfg.weight_decay,
         optim=cfg.optimizer,
         max_grad_norm=cfg.max_grad_norm,
