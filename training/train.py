@@ -434,6 +434,51 @@ def make_collator(processor, cfg: TrainingConfig):
     return collate
 
 
+# ── fast path: pre-tokenized text-only training ──────────────────────────────
+
+def tokenize_text_dataset(ds, processor, cfg: TrainingConfig):
+    """Pre-tokenize a text-only dataset once so each step only pads tensors
+    instead of re-running apply_chat_template + the tokenizer every batch."""
+    tokenizer = processor.tokenizer
+
+    def _tok(sample):
+        messages = sample[cfg.messages_column]
+        if isinstance(messages, str):
+            try:
+                messages = json.loads(messages)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Could not parse messages column '{cfg.messages_column}' as JSON. "
+                    f"Check your dataset format (CSV quoting issues are common). "
+                    f"Original error: {e}"
+                ) from e
+        text = processor.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=False
+        )
+        enc = tokenizer(text, truncation=True, max_length=cfg.max_seq_len)
+        return {"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"]}
+
+    return ds.map(_tok, remove_columns=ds.column_names, desc="Tokenizing")
+
+
+def make_padding_collator(processor):
+    """Collator for an already-tokenized dataset: just pad and build labels."""
+    tokenizer = processor.tokenizer
+
+    def collate(batch):
+        features = {
+            "input_ids": [b["input_ids"] for b in batch],
+            "attention_mask": [b["attention_mask"] for b in batch],
+        }
+        padded = tokenizer.pad(features, padding=True, return_tensors="pt")
+        labels = padded["input_ids"].clone()
+        labels[padded["attention_mask"] == 0] = -100
+        padded["labels"] = labels
+        return padded
+
+    return collate
+
+
 # ── model + LoRA setup ───────────────────────────────────────────────────────
 
 def load_model_and_processor(cfg: TrainingConfig):
@@ -505,6 +550,10 @@ def run_training(cfg: TrainingConfig):
     import torch
     from transformers import TrainingArguments, Trainer
 
+    # Faster matmuls on Ampere/Ada GPUs (e.g. RTX 4060) at no quality cost for bf16.
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
     # ── load model ────────────────────────────────────────────────────────
     model, processor = load_model_and_processor(cfg)
     model = apply_lora(model, cfg)
@@ -514,7 +563,17 @@ def run_training(cfg: TrainingConfig):
     train_ds, val_ds = split_dataset(ds, cfg.val_split_ratio)
 
     # ── data collator ─────────────────────────────────────────────────────
-    collator = make_collator(processor, cfg)
+    # Text-only: pre-tokenize once (visible progress bar) and pad per batch —
+    # far faster per step than templating + tokenizing live in the collator.
+    # Multimodal: keep the live collator that processes images each batch.
+    if cfg.has_images:
+        collator = make_collator(processor, cfg)
+    else:
+        info("Pre-tokenizing dataset (one-time, replaces per-step tokenization) ...")
+        train_ds = tokenize_text_dataset(train_ds, processor, cfg)
+        if val_ds is not None:
+            val_ds = tokenize_text_dataset(val_ds, processor, cfg)
+        collator = make_padding_collator(processor)
 
     # ── training args ─────────────────────────────────────────────────────
     os.makedirs(cfg.output_dir, exist_ok=True)
@@ -548,6 +607,7 @@ def run_training(cfg: TrainingConfig):
         report_to=cfg.report_to if cfg.report_to != "none" else [],
         run_name=cfg.run_name if cfg.report_to != "none" else None,
         dataloader_num_workers=cfg.dataloader_num_workers,
+        dataloader_pin_memory=True,
         remove_unused_columns=False,
         label_names=["labels"],
     )
