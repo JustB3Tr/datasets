@@ -439,7 +439,7 @@ def make_collator(processor, cfg: TrainingConfig):
 def tokenize_text_dataset(ds, processor, cfg: TrainingConfig):
     """Pre-tokenize a text-only dataset once so each step only pads tensors
     instead of re-running apply_chat_template + the tokenizer every batch."""
-    tokenizer = processor.tokenizer
+    tokenizer = getattr(processor, "tokenizer", processor)
 
     def _tok(sample):
         messages = sample[cfg.messages_column]
@@ -463,7 +463,7 @@ def tokenize_text_dataset(ds, processor, cfg: TrainingConfig):
 
 def make_padding_collator(processor):
     """Collator for an already-tokenized dataset: just pad and build labels."""
-    tokenizer = processor.tokenizer
+    tokenizer = getattr(processor, "tokenizer", processor)
 
     def collate(batch):
         features = {
@@ -483,13 +483,25 @@ def make_padding_collator(processor):
 
 def load_model_and_processor(cfg: TrainingConfig):
     import torch
-    from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration, BitsAndBytesConfig
+    from transformers import (
+        AutoProcessor, AutoTokenizer,
+        Qwen2_5_VLForConditionalGeneration, AutoModelForCausalLM,
+        BitsAndBytesConfig,
+    )
+
+    is_vl = cfg.has_images or "vl" in cfg.model_name.lower()
 
     info(f"Loading processor from {cfg.model_name} ...")
-    processor = AutoProcessor.from_pretrained(cfg.model_name, trust_remote_code=True)
+    if is_vl:
+        processor = AutoProcessor.from_pretrained(cfg.model_name, trust_remote_code=True)
+    else:
+        processor = AutoTokenizer.from_pretrained(cfg.model_name, trust_remote_code=True)
+        processor.pad_token = processor.pad_token or processor.eos_token
 
     dtype_map = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
     torch_dtype = dtype_map.get(cfg.torch_dtype, torch.bfloat16)
+
+    ModelClass = Qwen2_5_VLForConditionalGeneration if is_vl else AutoModelForCausalLM
 
     if cfg.use_qlora:
         info(f"Loading model in {cfg.quant_bits}-bit QLoRA mode ...")
@@ -500,7 +512,7 @@ def load_model_and_processor(cfg: TrainingConfig):
             bnb_4bit_compute_dtype=torch_dtype,
             bnb_4bit_use_double_quant=True,
         )
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model = ModelClass.from_pretrained(
             cfg.model_name,
             quantization_config=bnb_cfg,
             device_map={"": 0},
@@ -508,7 +520,7 @@ def load_model_and_processor(cfg: TrainingConfig):
         )
     else:
         info(f"Loading model in {cfg.torch_dtype} LoRA mode ...")
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model = ModelClass.from_pretrained(
             cfg.model_name,
             torch_dtype=torch_dtype,
             device_map={"": 0},
