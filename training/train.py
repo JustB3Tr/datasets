@@ -455,7 +455,7 @@ def load_model_and_processor(cfg: TrainingConfig):
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             cfg.model_name,
             quantization_config=bnb_cfg,
-            device_map="auto",
+            device_map={"": 0},
             trust_remote_code=True,
         )
     else:
@@ -463,7 +463,7 @@ def load_model_and_processor(cfg: TrainingConfig):
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             cfg.model_name,
             torch_dtype=torch_dtype,
-            device_map="auto",
+            device_map={"": 0},
             trust_remote_code=True,
         )
 
