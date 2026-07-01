@@ -285,7 +285,7 @@ def build_config_interactively() -> TrainingConfig:
 
     cfg.disable_tqdm = ask_bool(
         "Disable progress bars? (recommended on Colab — avoids per-batch eval spam)",
-        default=True,
+        default=cfg.disable_tqdm,
     )
 
     resume = ask_bool("Resume from a checkpoint?", default=False)

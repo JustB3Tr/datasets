@@ -123,6 +123,8 @@ class Pipe:
     # ── ollama plumbing ──────────────────────────────────────────────────────
 
     def _chat(self, model, messages, tools=None, fmt=None, stream=False):
+        """Non-streaming: returns the parsed JSON dict (response is closed).
+        Streaming: returns the live Response (caller must use it as a context manager)."""
         payload = {"model": model, "messages": messages, "stream": stream}
         if tools:
             payload["tools"] = tools
@@ -134,8 +136,12 @@ class Pipe:
             timeout=self.valves.REQUEST_TIMEOUT,
             stream=stream,
         )
-        resp.raise_for_status()
-        return resp
+        if stream:
+            resp.raise_for_status()
+            return resp
+        with resp:
+            resp.raise_for_status()
+            return resp.json()
 
     def _stream_turn(self, model, messages, tools=None):
         """Stream one model turn. Yields ('text', chunk) pieces, then finally
@@ -172,7 +178,7 @@ class Pipe:
         return url
 
     def _caption_b64(self, image_b64: str) -> str:
-        resp = self._chat(
+        data = self._chat(
             self.valves.VISION_MODEL,
             [{
                 "role": "user",
@@ -183,7 +189,7 @@ class Pipe:
                 "images": [image_b64],
             }],
         )
-        return resp.json()["message"]["content"].strip()
+        return data["message"]["content"].strip()
 
     def _extract_user_request(self, body: dict):
         """Return (chat_history_as_text, latest_user_text, image_b64_list)."""
@@ -352,11 +358,13 @@ class Pipe:
                 output = self._exec_tool(tname, targs, label)
                 shown = output if len(output) <= 1500 else output[:1500] + "\n... (truncated)"
                 yield f"```\n{shown}\n```\n"
-                # tool_name correlates the result to the call (Ollama's field;
-                # ignored by servers that don't use it).
-                messages.append(
-                    {"role": "tool", "tool_name": tname, "content": output}
-                )
+                # Correlate the result to the call: tool_name is Ollama's field,
+                # tool_call_id covers OpenAI-style backends. Extra keys are
+                # ignored by servers that don't use them.
+                tool_msg = {"role": "tool", "tool_name": tname, "content": output}
+                if tc.get("id"):
+                    tool_msg["tool_call_id"] = tc["id"]
+                messages.append(tool_msg)
         else:
             final_text = "(subagent hit the tool-iteration limit before finishing)"
             yield f"\n\n⚠️ {final_text}\n"
@@ -376,7 +384,7 @@ class Pipe:
     )
 
     def _plan(self, user_request, history) -> List[dict]:
-        resp = self._chat(
+        data = self._chat(
             self.valves.MAIN_MODEL,
             [
                 {"role": "system", "content": "You are an orchestrator that plans AI subagent pipelines.\n" + self.PLAN_SCHEMA_HINT},
@@ -385,7 +393,7 @@ class Pipe:
             fmt="json",
         )
         try:
-            plan = json.loads(resp.json()["message"]["content"])
+            plan = json.loads(data["message"]["content"])
             if not plan.get("needs_subagents"):
                 return []
             subs = plan.get("subagents", [])
@@ -398,7 +406,7 @@ class Pipe:
 
     def _plan_followup(self, user_request) -> List[dict]:
         """After all subagents ran, ask the main model if more are needed."""
-        resp = self._chat(
+        data = self._chat(
             self.valves.MAIN_MODEL,
             [
                 {"role": "system", "content": "You review a finished AI subagent pipeline and decide if MORE subagents are needed to fully satisfy the user's request.\n" + self.PLAN_SCHEMA_HINT},
@@ -407,7 +415,7 @@ class Pipe:
             fmt="json",
         )
         try:
-            plan = json.loads(resp.json()["message"]["content"])
+            plan = json.loads(data["message"]["content"])
             if not plan.get("needs_subagents"):
                 return []
             return [
