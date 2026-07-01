@@ -144,6 +144,7 @@ class TrainingConfig:
     report_to: str = "none"    # none | wandb | tensorboard
     run_name: str = "qwen25vl-sft-lora"
     resume_from_checkpoint: Optional[str] = None
+    disable_tqdm: bool = True    # avoid per-batch progress-bar spam (esp. during eval on Colab)
 
 
 # ── interactive config builder ───────────────────────────────────────────────
@@ -281,6 +282,11 @@ def build_config_interactively() -> TrainingConfig:
         choices=["none", "wandb", "tensorboard"],
     )
     # run_name already set from the output subfolder name above
+
+    cfg.disable_tqdm = ask_bool(
+        "Disable progress bars? (recommended on Colab — avoids per-batch eval spam)",
+        default=cfg.disable_tqdm,
+    )
 
     resume = ask_bool("Resume from a checkpoint?", default=False)
     if resume:
@@ -622,6 +628,7 @@ def run_training(cfg: TrainingConfig):
         dataloader_pin_memory=True,
         remove_unused_columns=False,
         label_names=["labels"],
+        disable_tqdm=cfg.disable_tqdm,
     )
 
     # ── trainer ───────────────────────────────────────────────────────────
