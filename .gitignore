@@ -1,1 +1,9 @@
+output/
 __pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+.venv/
+venv/
+GLM/*.jsonl
