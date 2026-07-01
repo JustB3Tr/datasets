@@ -166,6 +166,9 @@ class Pipe:
         if url.startswith("data:"):
             _, _, b64 = url.partition(",")
             return b64 or None
+        if url.startswith("http"):
+            # Refuse remote URLs (SSRF risk); Open WebUI sends data: URLs.
+            return None
         return url
 
     def _caption_b64(self, image_b64: str) -> str:
@@ -215,8 +218,9 @@ class Pipe:
         os.makedirs(ws, exist_ok=True)
 
         def safe_path(rel):
-            p = os.path.realpath(os.path.join(ws, rel))
-            if not p.startswith(os.path.realpath(ws)):
+            root = os.path.realpath(ws)
+            p = os.path.realpath(os.path.join(root, rel))
+            if os.path.commonpath([root, p]) != root:
                 raise ValueError("Path escapes workspace directory")
             return p
 
@@ -348,7 +352,11 @@ class Pipe:
                 output = self._exec_tool(tname, targs, label)
                 shown = output if len(output) <= 1500 else output[:1500] + "\n... (truncated)"
                 yield f"```\n{shown}\n```\n"
-                messages.append({"role": "tool", "content": output})
+                # tool_name correlates the result to the call (Ollama's field;
+                # ignored by servers that don't use it).
+                messages.append(
+                    {"role": "tool", "tool_name": tname, "content": output}
+                )
         else:
             final_text = "(subagent hit the tool-iteration limit before finishing)"
             yield f"\n\n⚠️ {final_text}\n"
