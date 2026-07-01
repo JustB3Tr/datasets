@@ -234,7 +234,7 @@ class Pipe:
                     timeout=self.valves.CODE_TIMEOUT,
                 )
                 out = (proc.stdout or "") + (("\nSTDERR:\n" + proc.stderr) if proc.stderr else "")
-                return out.strip() or "(no output, exit code %d)" % proc.returncode
+                return f"{out.strip() or '(no output)'}\n(exit code {proc.returncode})"
 
             if name == "run_shell":
                 if not self.valves.ENABLE_CODE_EXECUTION:
@@ -245,17 +245,17 @@ class Pipe:
                     timeout=self.valves.CODE_TIMEOUT,
                 )
                 out = (proc.stdout or "") + (("\nSTDERR:\n" + proc.stderr) if proc.stderr else "")
-                return out.strip() or "(no output, exit code %d)" % proc.returncode
+                return f"{out.strip() or '(no output)'}\n(exit code {proc.returncode})"
 
             if name == "write_file":
                 p = safe_path(args["path"])
                 os.makedirs(os.path.dirname(p), exist_ok=True)
-                with open(p, "w") as f:
+                with open(p, "w", encoding="utf-8") as f:
                     f.write(args["content"])
                 return f"Wrote {len(args['content'])} chars to {args['path']}"
 
             if name == "read_file":
-                with open(safe_path(args["path"])) as f:
+                with open(safe_path(args["path"]), encoding="utf-8", errors="replace") as f:
                     return f.read()[:20000]
 
             if name == "caption_image":
