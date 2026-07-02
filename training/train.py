@@ -145,6 +145,7 @@ class TrainingConfig:
     run_name: str = "qwen25vl-sft-lora"
     resume_from_checkpoint: Optional[str] = None
     disable_tqdm: bool = True    # avoid per-batch progress-bar spam (esp. during eval on Colab)
+    auto_zip_download: bool = False   # zip + browser-download each checkpoint (Colab only)
 
 
 # ── interactive config builder ───────────────────────────────────────────────
@@ -286,6 +287,11 @@ def build_config_interactively() -> TrainingConfig:
     cfg.disable_tqdm = ask_bool(
         "Disable progress bars? (recommended on Colab — avoids per-batch eval spam)",
         default=cfg.disable_tqdm,
+    )
+    cfg.auto_zip_download = ask_bool(
+        "Auto-zip and browser-download each checkpoint as it saves? "
+        "(Colab only — protects progress from disconnects without using Drive storage)",
+        default=cfg.auto_zip_download,
     )
 
     resume = ask_bool("Resume from a checkpoint?", default=False)
@@ -566,7 +572,45 @@ def apply_lora(model, cfg: TrainingConfig):
 
 def run_training(cfg: TrainingConfig):
     import torch
-    from transformers import TrainingArguments, Trainer
+    from transformers import TrainingArguments, Trainer, TrainerCallback
+
+    class ZipAndDownloadCallback(TrainerCallback):
+        """On every checkpoint save, zip the checkpoint folder and trigger a
+        browser download via Colab's files.download() — no Drive storage needed.
+        Falls back to just leaving the zip on disk outside Colab."""
+
+        def __init__(self, output_dir: str):
+            self.output_dir = output_dir
+
+        def on_save(self, args, state, control, **kwargs):
+            import glob
+            import shutil
+
+            if not state.is_world_process_zero:
+                return control
+
+            ckpt_dir = os.path.join(self.output_dir, f"checkpoint-{state.global_step}")
+            if not os.path.isdir(ckpt_dir):
+                return control
+
+            info(f"Zipping checkpoint-{state.global_step} ...")
+            zip_path = shutil.make_archive(ckpt_dir, "zip", ckpt_dir)
+
+            try:
+                from google.colab import files
+                info(f"Downloading {os.path.basename(zip_path)} to your browser ...")
+                files.download(zip_path)
+            except ImportError:
+                info(f"Not running in Colab — zip saved at {zip_path}")
+
+            # save_total_limit only rotates checkpoint-N/ directories, not the
+            # zips we create here — prune zips whose directory has since been
+            # deleted so they don't silently pile up and fill the disk.
+            for old_zip in glob.glob(os.path.join(self.output_dir, "checkpoint-*.zip")):
+                if not os.path.isdir(old_zip[: -len(".zip")]):
+                    os.remove(old_zip)
+
+            return control
 
     # Faster matmuls on Ampere/Ada GPUs (e.g. RTX 4060) at no quality cost for bf16.
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -632,12 +676,15 @@ def run_training(cfg: TrainingConfig):
     )
 
     # ── trainer ───────────────────────────────────────────────────────────
+    callbacks = [ZipAndDownloadCallback(cfg.output_dir)] if cfg.auto_zip_download else None
+
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
         data_collator=collator,
+        callbacks=callbacks,
     )
 
     info("Starting training...")
