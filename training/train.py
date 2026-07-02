@@ -612,6 +612,19 @@ def run_training(cfg: TrainingConfig):
 
             return control
 
+    class StepLoggingCallback(TrainerCallback):
+        """Default log lines only carry epoch/loss/lr — no step number, making it
+        impossible to tell progress at a glance. Print step alongside everything
+        else instead."""
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if logs is None or not state.is_world_process_zero:
+                return control
+            total = state.max_steps if state.max_steps > 0 else "?"
+            ordered = {"step": f"{state.global_step}/{total}", **logs}
+            print(ordered)
+            return control
+
     # Faster matmuls on Ampere/Ada GPUs (e.g. RTX 4060) at no quality cost for bf16.
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
@@ -676,7 +689,9 @@ def run_training(cfg: TrainingConfig):
     )
 
     # ── trainer ───────────────────────────────────────────────────────────
-    callbacks = [ZipAndDownloadCallback(cfg.output_dir)] if cfg.auto_zip_download else None
+    callbacks = [StepLoggingCallback()]
+    if cfg.auto_zip_download:
+        callbacks.append(ZipAndDownloadCallback(cfg.output_dir))
 
     trainer = Trainer(
         model=model,
@@ -686,6 +701,11 @@ def run_training(cfg: TrainingConfig):
         data_collator=collator,
         callbacks=callbacks,
     )
+    if cfg.disable_tqdm:
+        # Replace the default PrinterCallback so step-tagged lines aren't
+        # duplicated by the built-in untagged printer.
+        from transformers.trainer_callback import PrinterCallback
+        trainer.remove_callback(PrinterCallback)
 
     info("Starting training...")
     trainer.train(resume_from_checkpoint=cfg.resume_from_checkpoint)
