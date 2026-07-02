@@ -621,6 +621,7 @@ def run_training(cfg: TrainingConfig):
             if logs is None or not state.is_world_process_zero:
                 return control
             total = state.max_steps if state.max_steps > 0 else "?"
+            logs = {k: v for k, v in logs.items() if k != "step"}
             ordered = {"step": f"{state.global_step}/{total}", **logs}
             print(ordered)
             return control
